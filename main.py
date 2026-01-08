@@ -12,7 +12,7 @@ class BinanceNTVBot:
     def __init__(self, telegram_bot_token, telegram_chat_id):
         self.telegram_token = telegram_bot_token
         self.chat_id = telegram_chat_id
-        self.binance_base = "https://api.binance.com/api/v3"
+        self.binance_base = "https://data-api.binance.vision/api/v3"
         
         self.symbol = os.getenv("SYMBOL", "BTCUSDT")
         self.interval = os.getenv("INTERVAL", "1h")
