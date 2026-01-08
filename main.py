@@ -10,10 +10,17 @@ class BinanceNTVBot:
         self.chat_id = telegram_chat_id
         
         # Railway/US engellerini aşmak için CCXT yapılandırması
+        # Railway US engellerini aşmak için alternatif host kullanımı
         self.exchange = ccxt.binance({
             'enableRateLimit': True,
             'options': {
                 'defaultType': 'spot'
+            },
+            # api.binance.com engelli olduğu için data-api'yi deniyoruz
+            'urls': {
+                'api': {
+                    'public': 'https://data-api.binance.vision/api/v3',
+                }
             }
         })
         # Not: Eğer hala 451 hatası alırsan, 'hostname': 'api1.binance.com' eklenebilir.
