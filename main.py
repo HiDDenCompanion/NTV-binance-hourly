@@ -114,7 +114,7 @@ class CryptoCompareNTVBot:
 
 if __name__ == "__main__":
     # DEĞİŞKENLER
-    API_KEY = 6fd514d654e5c375a0bc6047670ee95962b2356ca4bd38208d2ae7b116d71ba5 
+    API_KEY = "6fd514d654e5c375a0bc6047670ee95962b2356ca4bd38208d2ae7b116d71ba5" 
     BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
     
