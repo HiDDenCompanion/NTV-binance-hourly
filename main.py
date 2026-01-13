@@ -1,6 +1,6 @@
 import requests
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import statistics
 import os
 import threading
@@ -23,30 +23,24 @@ class CryptoCompareNTVBot:
         self.api_key = api_key
         self.telegram_token = telegram_token
         
-        # Otomatik Chat ID Düzeltme (-100 kontrolü)
-        raw_id = str(chat_id)
-        if raw_id.startswith("-") and not raw_id.startswith("-100") and len(raw_id) <= 11:
+        # Chat ID otomatik düzeltme
+        raw_id = str(chat_id).strip()
+        if raw_id.startswith("-") and not raw_id.startswith("-100"):
             self.chat_id = raw_id.replace("-", "-100")
         else:
-            self.chat_id = chat_id
+            self.chat_id = raw_id
             
         self.symbol = os.getenv("SYMBOL", "BTC")
         self.ntv_history = []
         self.max_history = 25
 
-    def get_now_utc3(self):
-        """UTC+3 (Türkiye) saatini döner."""
-        return datetime.utcnow() + timedelta(hours=3)
-
     def send_telegram(self, message):
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"}
         try:
-            response = requests.post(url, json=payload, timeout=15)
-            if response.status_code != 200:
-                print(f"❌ Telegram Hatası: {response.text}")
+            requests.post(url, json=payload, timeout=15)
         except Exception as e:
-            print(f"❌ Bağlantı Hatası: {e}")
+            print(f"Bağlantı Hatası: {e}", flush=True)
 
     def get_data(self, limit=50):
         url = "https://min-api.cryptocompare.com/data/v2/histohour"
@@ -67,9 +61,8 @@ class CryptoCompareNTVBot:
         return modeled_ntv / 10, price
 
     def analyze(self):
-        # Durum mesajı (UTC+3 saatli)
-        now = self.get_now_utc3().strftime('%H:%M')
-        self.send_telegram(f"🔍 [{now}] <b>{self.symbol}</b> verileri analiz ediliyor...")
+        # Arka planda loglara yaz (Telegram'a mesaj atmaz)
+        print(f"🔍 Analiz yapılıyor: {self.symbol}", flush=True)
         
         data = self.get_data()
         if not data: return
@@ -78,27 +71,30 @@ class CryptoCompareNTVBot:
         self.ntv_history.append(ntv_value)
         if len(self.ntv_history) > self.max_history: self.ntv_history.pop(0)
         
+        # Sinyal için yeterli veri yoksa sessizce bekle
         if len(self.ntv_history) < 5: 
-            self.send_telegram(f"⏳ Veri biriktiriliyor... ({len(self.ntv_history)}/5)")
             return
             
         avg_ntv = statistics.mean(self.ntv_history)
         std_ntv = statistics.stdev(self.ntv_history)
 
+        # Sadece Sinyal Şartları Oluştuğunda Mesaj Atar
         if ntv_value > (avg_ntv + 2 * std_ntv):
-            self.send_telegram(f"🔔 🟢 <b>GÜÇLÜ ALIM</b>\n💰 Fiyat: ${price:,.2f}\n📊 NTV: {ntv_value:.2f}")
+            self.send_telegram(f"🔔 🟢 <b>{self.symbol} GÜÇLÜ ALIM SİNYALİ</b>\n\n💰 Fiyat: ${price:,.2f}\n📊 Modellemiş NTV: {ntv_value:.2f}")
         elif ntv_value < (avg_ntv - 2 * std_ntv):
-            self.send_telegram(f"🔔 🔴 <b>GÜÇLÜ SATIŞ</b>\n💰 Fiyat: ${price:,.2f}\n📊 NTV: {ntv_value:.2f}")
+            self.send_telegram(f"🔔 🔴 <b>{self.symbol} GÜÇLÜ SATIŞ SİNYALİ</b>\n\n💰 Fiyat: ${price:,.2f}\n📊 Modellemiş NTV: {ntv_value:.2f}")
 
     def run(self):
-        self.send_telegram(f"🚀 <b>Bot Başlatıldı</b>")
+        print("✅ Bot başlatıldı, ilk bildirim gönderiliyor...", flush=True)
+        self.send_telegram(f"🚀 <b>Bot Başlatıldı</b>\n{self.symbol} takibi aktif. Sinyal oluştuğunda bilgilendirme yapılacaktır.")
+        
         while True:
             try:
                 self.analyze()
-                next_check = (self.get_now_utc3() + timedelta(hours=1)).strftime('%H:%M')
-                self.send_telegram(f"✅ Analiz tamamlandı. Sıradaki: <b>{next_check}</b>")
             except Exception as e:
-                print(f"Hata: {e}")
+                print(f"Hata: {e}", flush=True)
+            
+            # Her saat başı kontrol (3600 saniye)
             time.sleep(3600)
 
 if __name__ == "__main__":
