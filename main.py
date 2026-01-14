@@ -6,7 +6,7 @@ import os
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# 1. Railway Health Check Sunucusu
+# Railway Health Check (Botun kapanmaması için gerekli)
 class SimpleServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -34,13 +34,16 @@ class CryptoCompareNTVBot:
         self.ntv_history = []
         self.max_history = 25
 
+    def get_now_utc3(self):
+        return datetime.now(timezone.utc) + timedelta(hours=3)
+
     def send_telegram(self, message):
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": message, "parse_mode": "HTML"}
         try:
             requests.post(url, json=payload, timeout=15)
-        except Exception as e:
-            print(f"Bağlantı Hatası: {e}", flush=True)
+        except:
+            pass
 
     def get_data(self, limit=50):
         url = "https://min-api.cryptocompare.com/data/v2/histohour"
@@ -57,13 +60,11 @@ class CryptoCompareNTVBot:
         price = last_bar['close']
         volume = last_bar['volumeto']
         change = last_bar['close'] - last_bar['open']
+        # İlk koddaki NTV modelleme mantığı
         modeled_ntv = (volume / price) * (1 if change >= 0 else -1)
         return modeled_ntv / 10, price
 
     def analyze(self):
-        # Arka planda loglara yaz (Telegram'a mesaj atmaz)
-        print(f"🔍 Analiz yapılıyor: {self.symbol}", flush=True)
-        
         data = self.get_data()
         if not data: return
 
@@ -71,39 +72,43 @@ class CryptoCompareNTVBot:
         self.ntv_history.append(ntv_value)
         if len(self.ntv_history) > self.max_history: self.ntv_history.pop(0)
         
-        # Sinyal için yeterli veri yoksa sessizce bekle
-        if len(self.ntv_history) < 5: 
-            return
+        if len(self.ntv_history) < 5: return
             
         avg_ntv = statistics.mean(self.ntv_history)
         std_ntv = statistics.stdev(self.ntv_history)
 
-        # Sadece Sinyal Şartları Oluştuğunda Mesaj Atar
+        # Sadece NTV ve Sapma odaklı sinyal (Filtresiz)
         if ntv_value > (avg_ntv + 2 * std_ntv):
-            self.send_telegram(f"🔔 🟢 <b>{self.symbol} GÜÇLÜ ALIM SİNYALİ</b>\n\n💰 Fiyat: ${price:,.2f}\n📊 Modellemiş NTV: {ntv_value:.2f}")
+            msg = (f"🔔 <b>{self.symbol}/USDT Sinyal</b>\n\n"
+                   f"🟢 <b>GÜÇLÜ ALIM BASKISI</b>\n"
+                   f"Alıcılar piyasayı domine ediyor.\n\n"
+                   f"💰 Fiyat: ${price:,.2f}\n"
+                   f"📊 Modellemiş NTV: {ntv_value:.2f}")
+            self.send_telegram(msg)
+
         elif ntv_value < (avg_ntv - 2 * std_ntv):
-            self.send_telegram(f"🔔 🔴 <b>{self.symbol} GÜÇLÜ SATIŞ SİNYALİ</b>\n\n💰 Fiyat: ${price:,.2f}\n📊 Modellemiş NTV: {ntv_value:.2f}")
+            msg = (f"🔔 <b>{self.symbol}/USDT Sinyal</b>\n\n"
+                   f"🔴 <b>GÜÇLÜ SATIŞ BASKISI</b>\n"
+                   f"Satıcılar piyasayı domine ediyor.\n\n"
+                   f"💰 Fiyat: ${price:,.2f}\n"
+                   f"📊 Modellemiş NTV: {ntv_value:.2f}")
+            self.send_telegram(msg)
 
     def run(self):
-        print("✅ Bot başlatıldı, ilk bildirim gönderiliyor...", flush=True)
-        self.send_telegram(f"🚀 <b>Bot Başlatıldı</b>\n{self.symbol} takibi aktif. Sinyal oluştuğunda bilgilendirme yapılacaktır.")
-        
+        self.send_telegram(f"🚀 <b>Bot Başlatıldı</b>")
         while True:
             try:
                 self.analyze()
             except Exception as e:
-                print(f"Hata: {e}", flush=True)
-            
-            # Her saat başı kontrol (3600 saniye)
+                print(f"Hata: {e}")
             time.sleep(3600)
 
 if __name__ == "__main__":
     threading.Thread(target=run_health_check_server, daemon=True).start()
     
-    CC_KEY = os.getenv("CRYPTOCOMPARE_API_KEY")
-    TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    TG_ID = os.getenv("TELEGRAM_CHAT_ID")
-    
-    if all([CC_KEY, TG_TOKEN, TG_ID]):
-        bot = CryptoCompareNTVBot(CC_KEY, TG_TOKEN, TG_ID)
-        bot.run()
+    bot = CryptoCompareNTVBot(
+        os.getenv("CRYPTOCOMPARE_API_KEY"),
+        os.getenv("TELEGRAM_BOT_TOKEN"),
+        os.getenv("TELEGRAM_CHAT_ID")
+    )
+    bot.run()
